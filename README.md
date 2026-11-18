@@ -64,3 +64,15 @@ cache/            local candidate tables (not committed)
 | `metrics.py`, `train.py`, `hpo.py` | A |
 | `hmm.py`, `predict.py`, `evaluate.py`, `maps.py` | B |
 | `api/server.py`, `ui/index.html`, `README.md` | C |
+
+## Deployment (two laptops)
+
+Laptop 1 serves the model API; Laptop 2 runs only the static UI. Full setup, Windows hotspot and
+firewall steps, the `student_test` dry run, the demo-day runbook and troubleshooting are in
+[`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md). Quick start:
+
+```
+PATHSNAP_SPLIT=student_test uvicorn api.server:app --host 0.0.0.0 --port 8000
+python -m http.server 5500 --directory ui    # Laptop 2: http://localhost:5500/?api=http://<LAPTOP1_IP>:8000
+python api/smoke.py --api http://localhost:8000
+```
