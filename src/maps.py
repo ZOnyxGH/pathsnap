@@ -38,7 +38,7 @@ def trip_map(trip: Trip, pred_route: list[int] | None = None, ref_route: np.ndar
              other_routes: dict[str, list[int]] | None = None) -> folium.Map:
     """GPS + network + (reference) + (other_routes) + predicted route, each a toggleable layer."""
     lat, lon = trip.lonlat[:, 1], trip.lonlat[:, 0]
-    m = folium.Map(location=[float(lat.mean()), float(lon.mean())], zoom_start=15, tiles="OpenStreetMap",
+    m = folium.Map(location=[float(lat.mean()), float(lon.mean())], zoom_start=15, tiles="CartoDB positron",
                    control_scale=True)
     rows = ""
 
