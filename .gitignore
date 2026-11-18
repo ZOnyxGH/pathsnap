@@ -1,0 +1,10 @@
+cache/
+__pycache__/
+*.pkl
+.venv/
+.pytest_cache/
+# raw data, if ever copied in
+/train/
+/student_test/
+/evaluator_test/
+/data/
