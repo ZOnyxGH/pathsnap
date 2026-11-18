@@ -1,3 +1,1266 @@
 <!doctype html>
-<html><head><meta charset="utf-8"><title>PathSnap</title></head>
-<body><h1>PathSnap</h1><p>Placeholder. Owner: C.</p></body></html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PathSnap — live map-matching demo</title>
+<link rel="icon" href="data:,">
+<!-- Leaflet CSS: CDN first, vendored copy on error (offline demo). -->
+<link id="leaflet-css" rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      onerror="this.onerror=null;this.href='vendor/leaflet.css';">
+<style>
+  :root {
+    --bg: #f4f6fb;
+    --panel: #ffffff;
+    --ink: #0f172a;
+    --muted: #5b6475;
+    --line: #e2e8f0;
+    --accent: #2563eb;
+    --accent-dark: #1d4ed8;
+    --radius: 12px;
+    --shadow: 0 1px 2px rgba(15, 23, 42, .05), 0 10px 28px -18px rgba(15, 23, 42, .35);
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    font: 15px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: var(--ink);
+    background: var(--bg);
+    display: flex;
+    flex-direction: column;
+    -webkit-font-smoothing: antialiased;
+  }
+  h1, h2, p, dl, dd { margin: 0; }
+  .mono { font-family: var(--mono); }
+  .muted { color: var(--muted); }
+  .small { font-size: 12.5px; }
+  .hidden { display: none !important; }
+
+  /* ---------- header ---------- */
+  .topbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px 24px;
+    padding: 12px 20px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--line);
+    box-shadow: 0 1px 0 rgba(15, 23, 42, .03);
+  }
+  .brand { display: flex; align-items: center; gap: 11px; min-width: 0; }
+  .mark {
+    width: 36px; height: 36px; flex: none;
+    border-radius: 10px;
+    background: linear-gradient(140deg, #3b82f6, #1e40af);
+    color: #fff;
+    display: grid; place-items: center;
+    font-size: 12px; font-weight: 700; letter-spacing: .04em;
+    box-shadow: 0 4px 12px -4px rgba(37, 99, 235, .65);
+  }
+  .brand h1 { font-size: 20px; letter-spacing: -.015em; }
+  .brand .sub { color: var(--muted); font-size: 12.5px; margin-top: 1px; }
+
+  .conn { display: flex; align-items: flex-end; gap: 8px; flex-wrap: wrap; }
+  .field { display: flex; flex-direction: column; gap: 3px; }
+  .field > span {
+    font-size: 10.5px; font-weight: 700; letter-spacing: .09em;
+    text-transform: uppercase; color: var(--muted);
+  }
+  #api-url {
+    width: min(44vw, 330px);
+    padding: 8px 10px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #fbfcfe;
+    color: var(--ink);
+    font: 13px/1.2 var(--mono);
+    transition: border-color .12s, box-shadow .12s;
+  }
+  #api-url:focus {
+    outline: none;
+    border-color: #93b4f8;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, .16);
+  }
+  .btn {
+    appearance: none;
+    border: 1px solid var(--line);
+    background: var(--panel);
+    color: var(--ink);
+    font: 600 13px/1 inherit;
+    font-family: inherit;
+    padding: 9px 14px;
+    border-radius: 8px;
+    cursor: pointer;
+    text-decoration: none;
+    display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+    transition: background .12s, border-color .12s, color .12s, transform .06s;
+  }
+  .btn:hover:not(:disabled) { background: #f6f8fd; border-color: #cfd9ea; }
+  .btn:active:not(:disabled) { transform: translateY(1px); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn.primary:hover:not(:disabled) { background: var(--accent-dark); border-color: var(--accent-dark); }
+  .btn:disabled { cursor: progress; opacity: .6; }
+  .btn.link {
+    width: 100%;
+    border-style: dashed;
+    color: var(--accent-dark);
+    background: #f8faff;
+    margin-top: auto;
+  }
+  .btn.link:hover:not(.disabled) { background: #eff5ff; border-color: #93b4f8; }
+  .btn.link.disabled { color: var(--muted); border-color: var(--line); background: #f8fafc; cursor: not-allowed; opacity: .7; }
+
+  .pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 7px 11px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: #f8fafc;
+    color: var(--muted);
+    font-size: 12px; font-weight: 600;
+    white-space: nowrap;
+    margin-bottom: 1px;
+  }
+  .pill::before {
+    content: ""; width: 7px; height: 7px; border-radius: 50%;
+    background: currentColor; opacity: .6; flex: none;
+  }
+  .pill.ok { background: #ecfdf5; border-color: #bbf7d0; color: #15803d; }
+  .pill.error { background: #fef2f2; border-color: #fecaca; color: #b91c1c; }
+  .pill.busy { background: #fffbeb; border-color: #fde68a; color: #a16207; }
+  .pill.busy::before { animation: pulse 1s ease-in-out infinite; }
+
+  /* ---------- error banner ---------- */
+  .error-banner {
+    margin: 10px 18px 0;
+    border: 1px solid #fecaca;
+    border-left: 4px solid #dc2626;
+    background: #fff5f5;
+    border-radius: 10px;
+    padding: 10px 14px;
+    box-shadow: var(--shadow);
+  }
+  .error-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+  .error-head strong { color: #991b1b; font-size: 13.5px; }
+  .error-head button {
+    appearance: none; border: 0; background: transparent;
+    color: #991b1b; font: 600 12px/1 inherit; font-family: inherit;
+    cursor: pointer; padding: 2px 4px; border-radius: 5px;
+  }
+  .error-head button:hover { background: rgba(220, 38, 38, .1); }
+  #error-body {
+    margin: 6px 0 0;
+    max-height: 150px;
+    overflow: auto;
+    color: #7f1d1d;
+    font: 12px/1.5 var(--mono);
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  /* ---------- layout ---------- */
+  .layout {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    gap: 14px;
+    padding: 14px 18px 18px;
+    grid-template-columns: 300px minmax(0, 1fr) 320px;
+    grid-template-areas: "side map metrics";
+  }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+  .panel-head h2 {
+    font-size: 11px; font-weight: 700; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--muted);
+  }
+  .chip {
+    font: 700 11px/1 var(--mono);
+    background: #eef2f8; color: #334155;
+    border-radius: 999px; padding: 4px 8px;
+  }
+
+  .sidebar { grid-area: side; padding: 14px 14px 12px; }
+  .split-line { margin-top: 5px; font-size: 12px; color: var(--muted); }
+  .split-line .mono { color: #334155; }
+  .trip-list {
+    flex: 1; min-height: 0;
+    overflow-y: auto;
+    display: flex; flex-direction: column; gap: 6px;
+    margin-top: 10px;
+    padding: 2px;
+    scrollbar-width: thin;
+  }
+  .trip-btn {
+    appearance: none;
+    display: flex; align-items: center; gap: 10px;
+    width: 100%;
+    padding: 9px 10px;
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    background: #fbfcfe;
+    color: var(--ink);
+    font: 600 13px/1 var(--mono);
+    letter-spacing: .02em;
+    text-align: left;
+    cursor: pointer;
+    transition: background .1s, border-color .1s, box-shadow .1s;
+  }
+  .trip-btn:hover:not(:disabled) { background: #f3f7ff; border-color: #bfd3f9; }
+  .trip-btn.active {
+    background: #eff5ff;
+    border-color: #93b4f8;
+    box-shadow: inset 3px 0 0 var(--accent);
+  }
+  .trip-btn:disabled { cursor: progress; opacity: .55; }
+  .trip-btn.failed {
+    background: #fff5f5;
+    border-color: #fecaca;
+    box-shadow: inset 3px 0 0 #dc2626;
+  }
+  .trip-btn.failed .trip-idx { color: #b91c1c; }
+  .trip-btn:focus-visible { outline: 2px solid rgba(37, 99, 235, .4); outline-offset: 1px; }
+  .trip-idx { font-size: 10.5px; font-weight: 500; color: var(--muted); min-width: 16px; }
+  .trip-btn.active .trip-idx { color: var(--accent-dark); }
+  .empty { color: var(--muted); font-size: 12.5px; padding: 6px 2px; line-height: 1.5; }
+  .sidebar-foot {
+    margin-top: 10px; padding-top: 9px;
+    border-top: 1px solid var(--line);
+    display: flex; justify-content: space-between; gap: 8px;
+    font-size: 11.5px; color: var(--muted);
+  }
+
+  .map-wrap {
+    grid-area: map;
+    position: relative;
+    min-height: 0;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: #e9eef6;
+    box-shadow: var(--shadow);
+    overflow: hidden;
+  }
+  #map { position: absolute; inset: 0; background: #e9eef6; }
+
+  .map-note {
+    position: absolute;
+    left: 50%; top: 14px;
+    transform: translateX(-50%);
+    z-index: 800;
+    display: flex; align-items: center; gap: 8px;
+    max-width: calc(100% - 32px);
+    padding: 8px 14px;
+    border-radius: 999px;
+    background: rgba(15, 23, 42, .84);
+    color: #fff;
+    font-size: 12.5px; font-weight: 600;
+    text-align: center;
+    pointer-events: none;
+    box-shadow: 0 4px 16px -6px rgba(15, 23, 42, .5);
+  }
+  .map-note.warn { background: rgba(185, 28, 28, .92); }
+
+  .legend {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px 10px;
+    margin-top: 10px;
+    padding: 8px 10px;
+    background: #fbfcfe;
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    font-size: 11.5px;
+    color: #334155;
+  }
+  .legend div { display: flex; align-items: center; gap: 7px; white-space: nowrap; }
+  .lg { display: inline-block; flex: none; }
+  .lg-gps { width: 17px; height: 3px; border-radius: 2px; background: #2563eb; opacity: .8; }
+  .lg-route { width: 17px; height: 4px; border-radius: 2px; background: #dc2626; }
+  .lg-dot { width: 10px; height: 10px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(15, 23, 42, .2); }
+  .lg-start { background: #16a34a; }
+  .lg-end { background: #111827; }
+
+  .map-offline {
+    position: absolute;
+    left: 12px; top: 12px;
+    z-index: 800;
+    padding: 5px 9px;
+    border-radius: 8px;
+    border: 1px solid #fde68a;
+    background: rgba(255, 251, 235, .96);
+    color: #92400e;
+    font-size: 11.5px; font-weight: 600;
+    pointer-events: none;
+  }
+
+  /* start / end markers (divIcon, no default Leaflet PNGs) */
+  .ps-divicon { background: transparent; border: 0; }
+  .ps-dot {
+    display: block;
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    border: 2px solid #fff;
+    box-shadow: 0 1px 5px rgba(15, 23, 42, .5);
+  }
+  .ps-dot-start { background: #16a34a; }
+  .ps-dot-end { background: #111827; }
+
+  /* ---------- metrics ---------- */
+  .metrics { grid-area: metrics; padding: 14px; overflow-y: auto; scrollbar-width: thin; }
+  .badge {
+    font-size: 10.5px; font-weight: 700; line-height: 1.3;
+    padding: 4px 8px;
+    border-radius: 999px;
+    background: #f5f3ff;
+    border: 1px solid #ddd6fe;
+    color: #6d28d9;
+  }
+  #metrics-empty { margin-top: 12px; line-height: 1.5; }
+  #metrics-body { margin-top: 12px; display: flex; flex-direction: column; flex: 1; }
+  .hero {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+    padding: 10px 12px;
+    border: 1px solid #dbe6fb;
+    border-radius: 10px;
+    background: linear-gradient(180deg, #f7faff, #eef4ff);
+  }
+  .hero-label {
+    font-size: 10.5px; font-weight: 700; letter-spacing: .09em;
+    text-transform: uppercase; color: #475569;
+    white-space: nowrap; flex: none;
+  }
+  .hero-value { font-size: 28px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+  .hero-value.na {
+    font-size: 14px; font-weight: 600; line-height: 1.35;
+    color: var(--muted); text-align: right; max-width: 200px;
+  }
+  .kv {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 9px 12px;
+    margin-top: 14px;
+    align-items: baseline;
+  }
+  .kv dt { color: var(--muted); font-size: 13px; }
+  .kv dd {
+    font-size: 14px; font-weight: 650;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    word-break: break-all;
+  }
+  .kv dd.na { color: var(--muted); font-weight: 500; font-size: 11.5px; line-height: 1.35; max-width: 170px; }
+  .kv-sm { margin-top: 12px; }
+  .kv-sm dt { font-size: 12px; }
+  .kv-sm dd { font-size: 12.5px; font-weight: 600; }
+  .rule { border-top: 1px solid var(--line); margin-top: 14px; }
+  .note {
+    margin-top: 12px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid #fde68a;
+    background: #fffbeb;
+    color: #92400e;
+    font-size: 12px;
+    line-height: 1.45;
+  }
+
+  /* ---------- misc ---------- */
+  .spinner {
+    width: 12px; height: 12px; flex: none;
+    border-radius: 50%;
+    border: 2px solid rgba(255, 255, 255, .35);
+    border-top-color: #fff;
+    animation: spin .8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes pulse { 0%, 100% { opacity: .35; } 50% { opacity: 1; } }
+
+  .leaflet-container { font-family: inherit; font-size: 12px; }
+  .leaflet-control-attribution { font-size: 10px; }
+
+  @media (max-width: 1250px) {
+    .layout {
+      grid-template-columns: 280px minmax(0, 1fr);
+      grid-template-areas: "side map" "side metrics";
+      grid-template-rows: minmax(0, 1fr) auto;
+    }
+    /* metrics become a compact two-column card below the map */
+    .metrics { max-height: none; }
+    #metrics-body {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      column-gap: 22px;
+      align-items: start;
+    }
+    #metrics-body .hero { grid-column: 1 / -1; }
+    #metrics-body > .kv { grid-column: 1; margin-top: 10px; }
+    #metrics-body > .kv.kv-sm { grid-column: 2; margin-top: 10px; }
+    #metrics-body .rule { display: none; }
+    #metrics-note { grid-column: 1 / -1; }
+  }
+  @media (max-width: 520px) {
+    #metrics-body { grid-template-columns: minmax(0, 1fr); }
+    #metrics-body > .kv,
+    #metrics-body > .kv.kv-sm { grid-column: 1; }
+  }
+  @media (max-width: 860px) {
+    body { height: auto; min-height: 100vh; }
+    .layout {
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-areas: "side" "map" "metrics";
+      grid-template-rows: auto minmax(360px, 58vh) auto;
+    }
+    .sidebar { max-height: 300px; }
+    .map-wrap { min-height: 360px; }
+    .metrics { max-height: none; }
+    #api-url { width: min(72vw, 330px); }
+    .topbar { padding: 12px 14px; }
+    .layout { padding: 12px 14px 16px; }
+    .error-banner { margin: 10px 14px 0; }
+  }
+  @media (max-width: 560px) {
+    .conn { width: 100%; }
+    .btn.primary { flex: 0 0 auto; }
+    #api-url { width: 100%; }
+    .field { flex: 1 1 100%; }
+    .pill { order: 3; }
+  }
+</style>
+</head>
+<body>
+<noscript>
+  <p style="margin:16px;padding:12px;border:1px solid #fecaca;background:#fff5f5;color:#991b1b;border-radius:8px">
+    PathSnap needs JavaScript to list trips and draw the map.
+  </p>
+</noscript>
+
+<header class="topbar">
+  <div class="brand">
+    <div class="mark" aria-hidden="true">PS</div>
+    <div>
+      <h1>PathSnap</h1>
+      <p class="sub">Live map-matching demo — pick a trip, watch the route appear</p>
+    </div>
+  </div>
+  <div class="conn">
+    <label class="field" for="api-url">
+      <span>API URL</span>
+      <input id="api-url" type="text" inputmode="url" spellcheck="false" autocomplete="off"
+             placeholder="http://192.168.43.120:8000" aria-describedby="status-pill">
+    </label>
+    <button id="connect-btn" type="button" class="btn primary">Connect</button>
+    <span id="status-pill" class="pill" role="status" aria-live="polite">starting…</span>
+  </div>
+</header>
+
+<div id="error-banner" class="error-banner hidden" role="alert">
+  <div class="error-head">
+    <strong id="error-title">Error</strong>
+    <button id="error-close" type="button" aria-label="Dismiss error">Dismiss</button>
+  </div>
+  <pre id="error-body"></pre>
+</div>
+
+<div class="layout">
+  <aside class="panel sidebar" aria-label="Trips">
+    <div class="panel-head">
+      <h2>Trips</h2>
+      <span id="trip-count" class="chip">0</span>
+    </div>
+    <p class="split-line">split: <span id="split-name" class="mono">—</span></p>
+    <div id="trip-list" class="trip-list">
+      <p class="empty">Loading map library…</p>
+    </div>
+    <div class="legend" aria-label="Map legend">
+      <div><span class="lg lg-gps"></span>GPS track</div>
+      <div><span class="lg lg-route"></span>Predicted route</div>
+      <div><span class="lg lg-dot lg-start"></span>Start</div>
+      <div><span class="lg lg-dot lg-end"></span>End</div>
+    </div>
+    <div class="sidebar-foot">
+      <span id="req-count">0 requests</span>
+      <span id="leaflet-src" title="Leaflet source">leaflet: —</span>
+    </div>
+  </aside>
+
+  <section class="map-wrap" aria-label="Map">
+    <div id="map"></div>
+    <div id="map-offline" class="map-offline hidden">base map offline — geometry still drawn</div>
+    <div id="map-note" class="map-note hidden" role="status" aria-live="polite"></div>
+  </section>
+
+  <aside class="panel metrics" aria-label="Metrics">
+    <div class="panel-head">
+      <h2>Metrics</h2>
+      <span id="stub-badge" class="badge hidden">stub pipeline — GPS shown as route</span>
+    </div>
+    <p id="metrics-empty" class="muted small">No prediction yet. Pick a trip on the left.</p>
+    <div id="metrics-body" class="hidden">
+      <div class="hero">
+        <span class="hero-label">Top-1</span>
+        <span id="m-top1" class="hero-value">—</span>
+      </div>
+      <dl class="kv">
+        <dt>Route F1</dt><dd id="m-f1">—</dd>
+        <dt>Precision</dt><dd id="m-precision">—</dd>
+        <dt>Recall</dt><dd id="m-recall">—</dd>
+        <dt>Continuity</dt><dd id="m-continuity">—</dd>
+      </dl>
+      <div class="rule"></div>
+      <dl class="kv kv-sm">
+        <dt>Inference</dt><dd id="m-inference">—</dd>
+        <dt>Trip</dt><dd id="m-trip" class="mono">—</dd>
+        <dt>Timestamp</dt><dd id="m-time">—</dd>
+      </dl>
+      <p id="metrics-note" class="note hidden"></p>
+    </div>
+    <a id="folium-link" class="btn link disabled" aria-disabled="true"
+       target="_blank" rel="noopener noreferrer">Open folium map ↗</a>
+  </aside>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  var STORAGE_KEY = 'pathsnap.apiUrl';
+  var DEFAULT_API = 'http://localhost:8000';
+  var GPS_MARKER_LIMIT = 1500;
+  var LEAFLET_JS_CDN = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+  var LEAFLET_JS_VENDOR = 'vendor/leaflet.js';
+
+  /* ------------------------------------------------------------------ *
+   * DOM + state
+   * ------------------------------------------------------------------ */
+  function $(id) { return document.getElementById(id); }
+
+  var el = {
+    apiInput: $('api-url'),
+    connectBtn: $('connect-btn'),
+    statusPill: $('status-pill'),
+    errBanner: $('error-banner'),
+    errTitle: $('error-title'),
+    errBody: $('error-body'),
+    errClose: $('error-close'),
+    tripList: $('trip-list'),
+    tripCount: $('trip-count'),
+    splitName: $('split-name'),
+    reqCount: $('req-count'),
+    leafletSrc: $('leaflet-src'),
+    mapNote: $('map-note'),
+    mapOffline: $('map-offline'),
+    stubBadge: $('stub-badge'),
+    metricsEmpty: $('metrics-empty'),
+    metricsBody: $('metrics-body'),
+    metricsNote: $('metrics-note'),
+    mTop1: $('m-top1'),
+    mF1: $('m-f1'),
+    mPrecision: $('m-precision'),
+    mRecall: $('m-recall'),
+    mContinuity: $('m-continuity'),
+    mInference: $('m-inference'),
+    mTrip: $('m-trip'),
+    mTime: $('m-time'),
+    foliumLink: $('folium-link')
+  };
+
+  var state = {
+    api: resolveApiUrl(),
+    connectedUrl: null,
+    trips: [],
+    activeTripId: null,
+    requests: 0,
+    predicting: false,
+    connecting: false,
+    lastPrediction: null,
+    map: null,
+    mapFailed: false,
+    layers: null,
+    cssFallbackInjected: false
+  };
+
+  /* ------------------------------------------------------------------ *
+   * Helpers
+   * ------------------------------------------------------------------ */
+  function normalizeUrl(value) {
+    return String(value == null ? '' : value).trim().replace(/\/+$/, '');
+  }
+
+  function resolveApiUrl() {
+    var fromQuery = null;
+    try {
+      fromQuery = new URLSearchParams(window.location.search).get('api');
+    } catch (e) { /* very old browser: ignore */ }
+    var stored = null;
+    try {
+      stored = window.localStorage.getItem(STORAGE_KEY);
+    } catch (e) { /* file:// or private mode: ignore */ }
+    return normalizeUrl(fromQuery || stored || DEFAULT_API) || DEFAULT_API;
+  }
+
+  function truncate(text, max) {
+    var s = String(text == null ? '' : text);
+    var limit = max || 4000;
+    return s.length > limit ? s.slice(0, limit) + '\n… (' + (s.length - limit) + ' more chars)' : s;
+  }
+
+  function asFiniteNumber(value) {
+    if (typeof value === 'number') return isFinite(value) ? value : null;
+    if (typeof value === 'string' && value.trim() !== '') {
+      var n = Number(value);
+      return isFinite(n) ? n : null;
+    }
+    return null;
+  }
+
+  function setStatus(kind, text) {
+    el.statusPill.className = 'pill' + (kind ? ' ' + kind : '');
+    el.statusPill.textContent = text;
+  }
+
+  function showError(title, detail) {
+    el.errTitle.textContent = title || 'Error';
+    el.errBody.textContent = detail ? String(detail) : '';
+    el.errBody.classList.toggle('hidden', !detail);
+    el.errBanner.classList.remove('hidden');
+  }
+
+  function clearError() {
+    el.errBanner.classList.add('hidden');
+    el.errBody.textContent = '';
+  }
+
+  function setMapNote(text, opts) {
+    opts = opts || {};
+    if (!text) {
+      el.mapNote.classList.add('hidden');
+      el.mapNote.textContent = '';
+      return;
+    }
+    el.mapNote.textContent = '';
+    if (opts.spinner) {
+      var sp = document.createElement('span');
+      sp.className = 'spinner';
+      el.mapNote.appendChild(sp);
+    }
+    var label = document.createElement('span');
+    label.textContent = text;
+    el.mapNote.appendChild(label);
+    el.mapNote.classList.toggle('warn', !!opts.warn);
+    el.mapNote.classList.remove('hidden');
+  }
+
+  function ApiError(message, detail) {
+    this.name = 'ApiError';
+    this.message = message;
+    this.detail = detail || '';
+    if (Error.captureStackTrace) Error.captureStackTrace(this, ApiError);
+  }
+  ApiError.prototype = Object.create(Error.prototype);
+  ApiError.prototype.constructor = ApiError;
+
+  function formatError(err, url) {
+    if (err && err.name === 'ApiError') {
+      return err.detail ? err.message + '\n\n' + err.detail : err.message;
+    }
+    var msg = (err && err.message) ? err.message : String(err);
+    var target = url || state.api || 'the API';
+    return msg + '\n\nCould not reach ' + target + '.\n' +
+      'Check: the API is running (uvicorn --host 0.0.0.0 --port 8000), ' +
+      'both laptops are on the same network or hotspot, the firewall allows the port, ' +
+      'and the IP in the URL is current.';
+  }
+
+  /* ------------------------------------------------------------------ *
+   * Leaflet loading: CDN first, vendored copy second, visible failure
+   * ------------------------------------------------------------------ */
+  function loadScript(src) {
+    return new Promise(function (resolve, reject) {
+      var s = document.createElement('script');
+      s.src = src;
+      s.async = false;
+      s.onload = function () { resolve(src); };
+      s.onerror = function () { reject(new Error('failed to load ' + src)); };
+      document.head.appendChild(s);
+    });
+  }
+
+  async function loadLeaflet() {
+    if (window.L && typeof window.L.map === 'function') return 'preloaded';
+    var sources = [LEAFLET_JS_CDN, LEAFLET_JS_VENDOR];
+    var failures = [];
+    for (var i = 0; i < sources.length; i++) {
+      try {
+        await loadScript(sources[i]);
+        if (window.L && typeof window.L.map === 'function') return sources[i];
+        failures.push(sources[i] + ' (loaded, but window.L is missing)');
+      } catch (err) {
+        failures.push(sources[i] + ' (' + (err && err.message ? err.message : 'error') + ')');
+      }
+    }
+    if (window.console && console.error) {
+      console.error('PathSnap: Leaflet could not be loaded.\n' + failures.join('\n'));
+    }
+    return null;
+  }
+
+  function ensureLeafletCss() {
+    if (state.cssFallbackInjected) return;
+    var pane = document.querySelector('.leaflet-pane');
+    if (!pane) return;
+    if (window.getComputedStyle(pane).position === 'absolute') return;
+    state.cssFallbackInjected = true;
+    var link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = 'vendor/leaflet.css';
+    document.head.appendChild(link);
+  }
+
+  /* ------------------------------------------------------------------ *
+   * Coordinate handling: API is [lon, lat], Leaflet wants [lat, lon]
+   * ------------------------------------------------------------------ */
+  function toLatLngs(points) {
+    var out = [];
+    if (!Array.isArray(points)) return out;
+    for (var i = 0; i < points.length; i++) {
+      var p = points[i];
+      if (!Array.isArray(p) || p.length < 2) continue;
+      var lon = Number(p[0]);
+      var lat = Number(p[1]);
+      if (!isFinite(lon) || !isFinite(lat)) continue;
+      if (Math.abs(lat) > 90 || Math.abs(lon) > 180) continue;
+      out.push([lat, lon]);
+    }
+    return out;
+  }
+
+  function dotIcon(kind) {
+    return window.L.divIcon({
+      className: 'ps-divicon',
+      html: '<span class="ps-dot ps-dot-' + kind + '"></span>',
+      iconSize: [14, 14],
+      iconAnchor: [7, 7]
+    });
+  }
+
+  /* ------------------------------------------------------------------ *
+   * Map
+   * ------------------------------------------------------------------ */
+  function initMap() {
+    state.map = window.L.map('map', {
+      preferCanvas: true,
+      zoomControl: false,
+      worldCopyJump: true
+    });
+    window.L.control.zoom({ position: 'topright' }).addTo(state.map);
+
+    state.layers = window.L.layerGroup().addTo(state.map);
+
+    var tiles = window.L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors'
+    });
+    var tileErrors = 0;
+    tiles.on('tileerror', function () {
+      tileErrors += 1;
+      if (tileErrors >= 3) el.mapOffline.classList.remove('hidden');
+    });
+    tiles.addTo(state.map);
+
+    var resizeTimer = null;
+    window.addEventListener('resize', function () {
+      if (resizeTimer) window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(function () {
+        if (state.map) state.map.invalidateSize({ animate: false });
+      }, 150);
+    });
+  }
+
+  function drawTrip(gps, route) {
+    var L = window.L;
+    var map = state.map;
+
+    state.layers.clearLayers();
+    map.invalidateSize({ animate: false });
+
+    if (gps.length) {
+      if (gps.length <= GPS_MARKER_LIMIT) {
+        for (var i = 0; i < gps.length; i++) {
+          L.circleMarker(gps[i], {
+            radius: 2.5,
+            stroke: false,
+            fillColor: '#2563eb',
+            fillOpacity: 0.85
+          }).addTo(state.layers);
+        }
+      }
+      L.polyline(gps, {
+        color: '#2563eb',
+        weight: 2,
+        opacity: 0.7,
+        lineJoin: 'round',
+        interactive: false
+      }).addTo(state.layers);
+    }
+
+    if (route.length) {
+      L.polyline(route, {
+        color: '#dc2626',
+        weight: 4,
+        opacity: 0.95,
+        lineJoin: 'round',
+        interactive: false
+      }).addTo(state.layers);
+    }
+
+    var start = gps.length ? gps[0] : route[0];
+    var end = gps.length ? gps[gps.length - 1] : route[route.length - 1];
+    if (start) {
+      L.marker(start, { icon: dotIcon('start'), interactive: false, keyboard: false }).addTo(state.layers);
+    }
+    if (end) {
+      L.marker(end, { icon: dotIcon('end'), interactive: false, keyboard: false }).addTo(state.layers);
+    }
+
+    var boundsPoints = gps.length ? gps : route;
+    if (boundsPoints.length === 1) {
+      map.setView(boundsPoints[0], 16);
+    } else if (boundsPoints.length > 1) {
+      map.fitBounds(L.latLngBounds(boundsPoints), {
+        padding: [28, 28],
+        maxZoom: 17,
+        animate: false
+      });
+    }
+
+    window.requestAnimationFrame(function () {
+      if (state.map) state.map.invalidateSize({ animate: false });
+    });
+  }
+
+  /* ------------------------------------------------------------------ *
+   * Trips
+   * ------------------------------------------------------------------ */
+  function setSplit(split) {
+    el.splitName.textContent = (typeof split === 'string' && split) ? split : '—';
+  }
+
+  function renderTripsPlaceholder(text) {
+    el.tripList.textContent = '';
+    var p = document.createElement('p');
+    p.className = 'empty';
+    p.textContent = text;
+    el.tripList.appendChild(p);
+    el.tripCount.textContent = '0';
+  }
+
+  function renderTrips(trips, split) {
+    el.tripList.textContent = '';
+    el.tripCount.textContent = String(trips.length);
+    setSplit(split);
+
+    if (!trips.length) {
+      renderTripsPlaceholder('The API returned an empty trip list.');
+      return;
+    }
+
+    var frag = document.createDocumentFragment();
+    for (var i = 0; i < trips.length; i++) {
+      var id = trips[i];
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'trip-btn';
+      btn.dataset.tripId = id;           /* ids stay strings, never Number() */
+      btn.title = 'Match trip ' + id;
+
+      var idx = document.createElement('span');
+      idx.className = 'trip-idx';
+      idx.textContent = String(i + 1).padStart(2, '0');
+
+      var label = document.createElement('span');
+      label.className = 'trip-id';
+      label.textContent = id;
+
+      btn.appendChild(idx);
+      btn.appendChild(label);
+      btn.addEventListener('click', (function (tripId) {
+        return function () { predict(tripId); };
+      })(id));
+      frag.appendChild(btn);
+    }
+    el.tripList.appendChild(frag);
+
+    if (state.activeTripId !== null) setActiveTrip(state.activeTripId);
+  }
+
+  function setActiveTrip(tripId) {
+    state.activeTripId = tripId;
+    var buttons = el.tripList.querySelectorAll('.trip-btn');
+    for (var i = 0; i < buttons.length; i++) {
+      var btn = buttons[i];
+      var on = (tripId !== null && btn.dataset.tripId === String(tripId));
+      btn.classList.toggle('active', on);
+      if (on) btn.setAttribute('aria-current', 'true');
+      else btn.removeAttribute('aria-current');
+    }
+  }
+
+  function setTripsDisabled(disabled) {
+    var buttons = el.tripList.querySelectorAll('.trip-btn');
+    for (var i = 0; i < buttons.length; i++) buttons[i].disabled = disabled;
+  }
+
+  function clearFailedTrips() {
+    var failed = el.tripList.querySelectorAll('.trip-btn.failed');
+    for (var i = 0; i < failed.length; i++) failed[i].classList.remove('failed');
+  }
+
+  function markFailedTrip(tripId) {
+    var buttons = el.tripList.querySelectorAll('.trip-btn');
+    for (var i = 0; i < buttons.length; i++) {
+      if (buttons[i].dataset.tripId === String(tripId)) buttons[i].classList.add('failed');
+    }
+  }
+
+  function bumpRequestCount() {
+    state.requests += 1;
+    el.reqCount.textContent = state.requests + (state.requests === 1 ? ' request' : ' requests');
+  }
+
+  /* ------------------------------------------------------------------ *
+   * Metrics (display only — nothing is computed client-side)
+   * ------------------------------------------------------------------ */
+  function setMetric(node, value, asPercent) {
+    var n = asFiniteNumber(value);
+    node.classList.remove('na');
+    if (value === null || value === undefined || n === null) {
+      node.textContent = 'n/a (no reference route)';
+      node.classList.add('na');
+      return false;
+    }
+    node.textContent = asPercent ? (n * 100).toFixed(1) + '%' : n.toFixed(3);
+    return true;
+  }
+
+  function formatInference(value) {
+    var n = asFiniteNumber(value);
+    if (n === null) return 'n/a';
+    return (Math.round(n * 10) / 10).toFixed(1) + ' ms';
+  }
+
+  function disableFolium() {
+    el.foliumLink.classList.add('disabled');
+    el.foliumLink.setAttribute('aria-disabled', 'true');
+    el.foliumLink.removeAttribute('href');
+    el.foliumLink.removeAttribute('tabindex');
+  }
+
+  function enableFolium(tripId) {
+    el.foliumLink.href = state.api + '/map/' + encodeURIComponent(String(tripId));
+    el.foliumLink.classList.remove('disabled');
+    el.foliumLink.removeAttribute('aria-disabled');
+  }
+
+  function resetPrediction() {
+    state.activeTripId = null;
+    state.lastPrediction = null;
+    if (state.layers) state.layers.clearLayers();
+    setActiveTrip(null);
+    el.metricsBody.classList.add('hidden');
+    el.metricsEmpty.classList.remove('hidden');
+    el.metricsEmpty.textContent = 'No prediction yet. Pick a trip on the left.';
+    el.metricsNote.classList.add('hidden');
+    el.metricsNote.textContent = '';
+    el.stubBadge.classList.add('hidden');
+    disableFolium();
+    if (!state.mapFailed) setMapNote('Select a trip on the left to match it on the map.', {});
+  }
+
+  function renderMetrics(metrics, payload, fallbackTripId, flags) {
+    flags = flags || {};
+    var m = (metrics && typeof metrics === 'object') ? metrics : {};
+    var anyNull = false;
+
+    if (!setMetric(el.mTop1, m.top1, false)) anyNull = true;
+    if (!setMetric(el.mF1, m.route_f1, false)) anyNull = true;
+    if (!setMetric(el.mPrecision, m.route_precision, false)) anyNull = true;
+    if (!setMetric(el.mRecall, m.route_recall, false)) anyNull = true;
+    if (!setMetric(el.mContinuity, m.continuity, true)) anyNull = true;
+
+    el.mInference.textContent = formatInference(payload.inference_ms);
+
+    var tripId = (payload.trip_id !== undefined && payload.trip_id !== null)
+      ? String(payload.trip_id)
+      : String(fallbackTripId);
+    el.mTrip.textContent = tripId;
+
+    var now = new Date();
+    el.mTime.textContent = now.toLocaleTimeString([], { hour12: false });
+    el.mTime.title = now.toString();
+
+    el.metricsEmpty.classList.add('hidden');
+    el.metricsBody.classList.remove('hidden');
+
+    var isStub = payload.stub === true || m.stub === true;
+    el.stubBadge.classList.toggle('hidden', !isStub);
+    el.stubBadge.title = isStub ? 'The API reported a stub pipeline result.' : '';
+
+    var notes = [];
+    if (!metrics || typeof metrics !== 'object') notes.push('The response contained no metrics object.');
+    else if (anyNull) notes.push('Reference route unavailable for this trip — metrics are n/a. The predicted route is still shown.');
+    if (flags.routeEmpty) notes.push('Predicted route is empty.');
+    if (flags.gpsEmpty) notes.push('GPS track is empty.');
+
+    if (notes.length) {
+      el.metricsNote.textContent = notes.join(' ');
+      el.metricsNote.classList.remove('hidden');
+    } else {
+      el.metricsNote.classList.add('hidden');
+      el.metricsNote.textContent = '';
+    }
+  }
+
+  /* ------------------------------------------------------------------ *
+   * HTTP
+   * ------------------------------------------------------------------ */
+  async function requestJson(url, options) {
+    var res = await fetch(url, options);
+    var raw = '';
+    try { raw = await res.text(); } catch (e) { raw = ''; }
+    var data = null;
+    var parseError = null;
+    if (raw) {
+      try { data = JSON.parse(raw); }
+      catch (e) { parseError = e; }
+    }
+    return { res: res, raw: raw, data: data, parseError: parseError };
+  }
+
+  /* ------------------------------------------------------------------ *
+   * Connect
+   * ------------------------------------------------------------------ */
+  async function connect() {
+    if (state.connecting) return;
+    var url = normalizeUrl(el.apiInput.value);
+    if (!url) {
+      setStatus('error', 'no URL');
+      showError('API URL is empty', 'Enter the API base URL, e.g. http://192.168.43.120:8000');
+      return;
+    }
+
+    state.connecting = true;
+    state.api = url;
+    el.apiInput.value = url;
+    el.connectBtn.disabled = true;
+    el.connectBtn.textContent = 'Connecting…';
+    setStatus('busy', 'connecting…');
+
+    try {
+      var result = await requestJson(url + '/trips', {
+        method: 'GET',
+        headers: { 'Accept': 'application/json' },
+        cache: 'no-store'
+      });
+      var res = result.res;
+
+      if (!res.ok) {
+        throw new ApiError('HTTP ' + res.status + (res.statusText ? ' ' + res.statusText : ''),
+          truncate(result.raw));
+      }
+      if (result.parseError) {
+        throw new ApiError('GET /trips returned invalid JSON', truncate(result.raw));
+      }
+      if (!result.data || !Array.isArray(result.data.trips)) {
+        throw new ApiError('Unexpected GET /trips response',
+          truncate(result.raw) || 'Expected {"split": "...", "trips": ["00000001", ...]}');
+      }
+
+      var trips = result.data.trips;
+      var changedApi = state.connectedUrl !== url;
+      state.connectedUrl = url;
+      state.trips = trips.slice();
+
+      renderTrips(trips, result.data.split);
+      if (changedApi) resetPrediction();
+
+      try { window.localStorage.setItem(STORAGE_KEY, url); }
+      catch (e) { /* storage unavailable: the URL still works for this session */ }
+
+      setStatus('ok', 'connected');
+      if (!state.mapFailed) clearError();
+      if (state.map && !state.mapFailed && !state.lastPrediction && !state.predicting) {
+        setMapNote('Select a trip on the left to match it on the map.', {});
+      }
+    } catch (err) {
+      state.connectedUrl = null;
+      state.trips = [];
+      setSplit(null);
+      renderTripsPlaceholder('Not connected — fix the API URL and press Connect.');
+      setStatus('error', 'offline');
+      showError('Could not connect to ' + url + '/trips', formatError(err, url + '/trips'));
+    } finally {
+      state.connecting = false;
+      el.connectBtn.disabled = false;
+      el.connectBtn.textContent = 'Connect';
+    }
+  }
+
+  /* ------------------------------------------------------------------ *
+   * Predict
+   * ------------------------------------------------------------------ */
+  async function predict(tripId) {
+    if (state.predicting) return;
+
+    if (!window.L || !state.map) {
+      showError('Map unavailable',
+        'Leaflet is not loaded, so the trip cannot be drawn.\n' +
+        'Make sure ui/vendor/leaflet.js exists next to index.html, or connect to the internet and reload.');
+      return;
+    }
+
+    if (!state.connectedUrl) {
+      showError('Not connected', 'Press Connect (or fix the API URL) before matching a trip.');
+      return;
+    }
+
+    state.predicting = true;
+    state.activeTripId = tripId;
+    clearFailedTrips();
+    setActiveTrip(tripId);
+    setTripsDisabled(true);
+    setStatus('busy', 'matching ' + tripId + '…');
+    setMapNote('Matching trip ' + tripId + '…', { spinner: true });
+    bumpRequestCount();
+
+    try {
+      var result = await requestJson(state.api + '/predict', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify({ trip_id: tripId })
+      });
+      var res = result.res;
+
+      if (!res.ok) {
+        throw new ApiError('HTTP ' + res.status + (res.statusText ? ' ' + res.statusText : ''),
+          truncate(result.raw));
+      }
+      if (result.parseError) {
+        throw new ApiError('POST /predict returned invalid JSON', truncate(result.raw));
+      }
+      if (!result.data || typeof result.data !== 'object' || Array.isArray(result.data)) {
+        throw new ApiError('Empty or unexpected POST /predict response', truncate(result.raw));
+      }
+
+      var payload = result.data;
+      var gps = toLatLngs(payload.gps_lonlat);
+      var route = toLatLngs(payload.route_lonlat);
+
+      state.lastPrediction = payload;
+
+      drawTrip(gps, route);
+      renderMetrics(payload.metrics, payload, tripId, {
+        gpsEmpty: gps.length === 0,
+        routeEmpty: route.length === 0
+      });
+
+      var drawnTripId = (payload.trip_id !== undefined && payload.trip_id !== null)
+        ? String(payload.trip_id) : String(tripId);
+      enableFolium(drawnTripId);
+      setActiveTrip(tripId);
+
+      var notes = [];
+      if (!gps.length && !route.length) notes.push('No geometry returned for this trip.');
+      else if (!route.length) notes.push('Predicted route is empty — GPS track shown.');
+      else if (!gps.length) notes.push('GPS track is empty — predicted route shown.');
+
+      if (notes.length) setMapNote(notes.join(' '), { warn: true });
+      else setMapNote(null);
+
+      setStatus('ok', 'connected');
+      clearError();
+    } catch (err) {
+      setStatus('error', 'request failed');
+      setMapNote('Matching failed — see the error banner above.', { warn: true });
+      markFailedTrip(tripId);
+      setActiveTrip(null);
+      showError('Predict failed for trip ' + tripId, formatError(err, state.api + '/predict'));
+    } finally {
+      state.predicting = false;
+      setTripsDisabled(false);
+    }
+  }
+
+  /* ------------------------------------------------------------------ *
+   * Wiring + boot
+   * ------------------------------------------------------------------ */
+  el.connectBtn.addEventListener('click', function () { connect(); });
+
+  el.apiInput.addEventListener('keydown', function (event) {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      connect();
+    }
+  });
+
+  el.errClose.addEventListener('click', clearError);
+
+  document.addEventListener('keydown', function (event) {
+    if (event.key === 'Escape') clearError();
+  });
+
+  el.foliumLink.addEventListener('click', function (event) {
+    if (el.foliumLink.classList.contains('disabled')) event.preventDefault();
+  });
+
+  async function boot() {
+    el.apiInput.value = state.api;
+    setStatus('busy', 'starting…');
+
+    var source = await loadLeaflet();
+    if (!source) {
+      state.mapFailed = true;
+      el.leafletSrc.textContent = 'leaflet: failed';
+      el.leafletSrc.title = 'Leaflet failed to load from the CDN and from ui/vendor/.';
+      setMapNote('Map unavailable — Leaflet could not be loaded.', { warn: true });
+      showError('Map library failed to load',
+        'Tried the CDN (' + LEAFLET_JS_CDN + ')\nand the local copy (' + LEAFLET_JS_VENDOR + ').\n\n' +
+        'Keep the ui/vendor/ folder next to index.html, or connect to the internet and reload.');
+      /* Degraded mode: the trip list can still load, predictions will refuse to draw. */
+      await connect();
+      return;
+    }
+
+    el.leafletSrc.textContent = (source === LEAFLET_JS_VENDOR) ? 'leaflet: vendor' : 'leaflet: cdn';
+    el.leafletSrc.title = 'Loaded from ' + source;
+
+    initMap();
+    window.setTimeout(ensureLeafletCss, 700);
+    setMapNote('Select a trip on the left to match it on the map.', {});
+
+    await connect();
+  }
+
+  boot().catch(function (err) {
+    if (window.console && console.error) console.error('PathSnap boot failed:', err);
+    setStatus('error', 'error');
+    showError('UI failed to start', (err && (err.stack || err.message)) || String(err));
+  });
+})();
+</script>
+</body>
+</html>
